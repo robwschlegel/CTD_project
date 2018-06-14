@@ -3,6 +3,7 @@
 ## This script does:
 # 1. Load DAFF pelagic survey data and save
 # 2. Load DEA survey data and save
+# 3. Clean up
 ## DEPENDS ON:
 library(tidyverse)
 library(purrr)
@@ -53,6 +54,13 @@ DAFF_pelagic$lon[DAFF_pelagic$lon < 5] <- NA
 ## Date
 # DAFF_pelagic$date[DAFF_pelagic$date < as.Date("1985-01-01")] <- NA
 # range(DAFF_pelagic$date, na.rm = T) # check...
+## Type
+DAFF_pelagic$type[DAFF_pelagic$type == "calvet"] <- "Calvet"
+DAFF_pelagic$type[DAFF_pelagic$type == "vbongo"] <- "Vbongo"
+DAFF_pelagic$type[DAFF_pelagic$type == "BONGO"] <- "Bongo"
+DAFF_pelagic$type[DAFF_pelagic$type == "MAGNUM"] <- "Magnum"
+DAFF_pelagic$type[DAFF_pelagic$type == "CALVET"] <- "Calvet"
+# unique(DAFF_pelagic$type) # check...
 ## Save
 save(DAFF_pelagic, file = "data/DAFF_pelagic.Rdata")
 # write.csv(DAFF_pelagic, file = "data/DAFF_pelagic.csv", row.names = F)
@@ -93,7 +101,20 @@ DEA_SADCO$temp[DEA_SADCO$temp < 2] <- NA
 ## Date
 # DEA_SADCO$date[DEA_SADCO$date < as.Date("1985-01-01")] <- NA
 # range(DEA_SADCO$date, na.rm = T)
+## Type
+  ## NB: I'm not certain that these types are correct
+  ## But something needs to be done about them
+  ## This can be corrected very easily later
+  ## SADCO should know what these type abbreviations stand for
+DEA_SADCO$type[DEA_SADCO$type == "B    "] <- "Bongo"
+DEA_SADCO$type[DEA_SADCO$type == "C    "] <- "CTD"
+DEA_SADCO$type[DEA_SADCO$type == "*    "] <- "Other"
+# unique(DEA_SADCO$type) # check...
 ## Save
 save(DEA_SADCO, file = "data/DEA_SADCO.Rdata")
 # write.csv(DEA_SADCO, file = "data/DEA_SADCO.csv", row.names = F)
 
+
+# 3. Clean up -------------------------------------------------------------
+
+rm(files_DAFF_pelagic, files_DEA_SADCO)

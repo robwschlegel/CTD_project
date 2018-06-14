@@ -2,48 +2,64 @@
 ###"proc/interp.CTD.R"
 ## This script does:
 # 1. Load and prep CTD data
-# 2. 
+# 2. Prepare interpolation grid
 ## DEPENDS ON:
-library(readr)
+library(tidyverse)
 library(lubridate)
-library(plyr)
-library(dplyr)
 library(data.table)
-library(ggplot2)
-library(viridis)
+# library(viridis)
 library(akima)
-library(raster)
-library(mgcv)
-library(animation)
-library(marmap)
-library(doMC); doMC::registerDoMC(4)
-source("func/shoreNormalTransectFunc.R")
+# library(raster)
+# library(mgcv)
+# library(animation)
+# library(marmap)
+# library(doMC); doMC::registerDoMC(4)
+# source("func/shoreNormalTransectFunc.R")
 ## USED BY:
-# Nothing
+# pipeline/pipeline.R
 ## CREATES:
 # A lekker cleaned up CTD data base
 #############################################################################
 
 
-# 1. Interpolate CTD data -------------------------------------------------
+# 1. Load and prep CTD data -----------------------------------------------
 
-## Load the 3D data
+# Load the CTD data
 load("data/DAFF_pelagic.Rdata")
 load("data/DEA_SADCO.Rdata")
 
-## Combine
-DAFF_pelagic_sub <- DAFF_pelagic[,c(1:5,7,6,8,9,11,13)]
-DEA_CTD_sub <- DEA_CTD[,c(1:8,10:12)]
-ALL_CTD <- rbind(DAFF_pelagic_sub, DEA_CTD_sub)
+# Combine
+ALL_CTD <- rbind(DAFF_pelagic, DEA_SADCO)
+rm(DAFF_pelagic, DEA_SADCO)
 
-## Add stuff and things
-ALL_CTD <- data.table(ALL_CTD[ALL_CTD$depth >= 0 & ALL_CTD$depth <= 1000,]) # Currently removing data deeper than 1000m for speed purposes
+# Currently removing data deeper than 1000m for speed purposes
+ALL_CTD <- data.table(ALL_CTD[ALL_CTD$depth >= 0 & ALL_CTD$depth <= 1000,])
+
+# Remove all rows with missing dates and depths
 ALL_CTD <- ALL_CTD[complete.cases(ALL_CTD$date),]
-# ALL_CTD <- ALL_CTD[complete.cases(ALL_CTD$depth),]
-ALL_CTD$depth <- round_any(ALL_CTD$depth, 10)
-ALL_CTD <- ALL_CTD[,.(temp = mean(temp, na.rm = T)), by = .(date, lon, lat, depth)]
-ALL_CTD$month <- lubridate::month(ALL_CTD$date, label = TRUE)
-ALL_CTD$year <- lubridate::year(ALL_CTD$date)
+ALL_CTD <- ALL_CTD[complete.cases(ALL_CTD$depth),]
+
+# Round down depth, lon, and lat values
+ALL_CTD <- ALL_CTD %>% 
+  mutate(depth = plyr::round_any(depth, 10),
+         lon = plyr::round_any(lon, 0.1),
+         lat = plyr::round_any(lat, 0.1))
+
+# Create reduced gridded mean values
+  ## NB: This presently removes the cruise, station, and type categories
+  ## This will be added back in as the app takes shape
+ALL_CTD <- data.table(ALL_CTD)[,.(temp = mean(temp, na.rm = T),
+                                  salinity = mean(salinity, na.rm = T),
+                                  oxygen = mean(oxygen, na.rm = T)),
+                               by = .(date, lon, lat, depth)]
+
+# Add month and year columns
+ALL_CTD <- ALL_CTD %>% 
+  mutate(month = lubridate::month(date, label = TRUE),
+         year = lubridate::year(date))
+
+
+# 2. Prepare interpolation grid -------------------------------------------
 
 ## Create grid
 # x.range <- as.numeric(c(10.0, 40.0))  # min/max longitude of the interpolation area
@@ -53,32 +69,54 @@ ALL_CTD$year <- lubridate::year(ALL_CTD$date)
 # coordinates(grd) <- ~x + y
 # gridded(grd) <- TRUE
 
+# Load bathymetry masks
+load("data/bathy_mask.Rdata")
+load("data/bathy_masks.Rdata")
 
-## Function for creating interpolated slices per monthly clim
-# Must manually tell the function which column to use for "z
+## Function for interpolating a column in the CTD data.frame
 # df <- filter(ALL_CTD, month == "Jan", depth == 10)
-# mask <- bathy_mask
-interpp.CTD <- function(df){
-  df1 <- data.table(df[complete.cases(df),])
-  if(length(df1$temp) < 5){
-    res <- data.frame(lon = NA, lat = NA, temp = NA,
+# column <- "temp"
+interpp_col <- function(df, column){
+  df1 <- df
+  df1$z <- df1[,colnames(df1) == column]
+  df1 <- df1[complete.cases(df1$z),]
+  # column1 <- column[complete.cases(column)]
+  if(nrow(df1) < 5){
+    res <- data.frame(lon = NA, lat = NA, z = NA,
                       depth = df$depth[1], month = df$month[1], year = df$year[1])
-    message("Fewer than 5 values. Interpolation not calculated.")
-    return(res)
+    colnames(res)[3] <- column
+  } else {
+    res <- data.frame(interpp(x = df1$lon, y = df1$lat, z = df1$z,
+                              xo = bathy_masks$lon, yo = bathy_masks$lat, linear = TRUE, 
+                              extrap = FALSE, dupl = "mean"))
+  colnames(res) <- c("lon", "lat", column)
+  res <- res %>% 
+    mutate(depth = df$depth[1], 
+           month = df$month[1], 
+           year = df$year[1]) %>% 
+    unique()
   }
-  grid_interp_t <- interpp(x = df1$lon, y = df1$lat, z = df1$temp,
-                           xo = bathy_mask$V1, yo = bathy_mask$V2, linear = TRUE, 
-                           extrap = FALSE, dupl = "mean")
-  res <- data.frame(grid_interp_t)
-  # grid_interp_s <- interpp(x = df1$lon, y = df1$lat, z = df1$salinity,
-  #                        xo = mask$V1, yo = mask$V2, linear = TRUE, 
-  #                        extrap = FALSE, dupl = "mean")
-  # res$salinity <- grid_interp_s$z
-  colnames(res)[1:3] <- c("lon", "lat", "temp")
-  res$depth <- df$depth[1]
-  res$month <- df$month[1]
-  res$year <- df$year[1]
-  res <- res[complete.cases(res),]
+  return(res)
+}
+
+## Function for creating interpolated slices
+# df <- filter(ALL_CTD, month == "Jan", depth == 10)
+# column <- df$temp
+# mask <- bathy_mask
+interpp_CTD <- function(df){
+  res_temp <- interpp_col(df, "temp") %>% 
+    na.omit()
+  res_sal <- interpp_col(df, "salinity") %>% 
+    select(lon, lat, salinity) %>% 
+    na.omit()
+  res_ox <- interpp_col(df, "oxygen") %>% 
+    select(lon, lat, oxygen) %>% 
+    na.omit()
+  res <- res_temp %>% 
+    left_join(res_sal, by = c("lon", "lat")) %>%
+    left_join(res_ox, by = c("lon", "lat"))
+  res <- res %>%
+    select(year, month, lon, lat, depth, temp, salinity, oxygen)
   return(res)
 }
 
@@ -94,7 +132,11 @@ interpp.CTD <- function(df){
 
 ## Run it
 # Monthly values
-system.time(CTD_interp_monthly <- ddply(ALL_CTD, .(depth, month), interpp.CTD, .progress = "text")) ## 7 seconds
+CTD_interp_monthly <- ALL_CTD %>% 
+              group_by(depth, month) %>% 
+              nest() %>% 
+              mutate(res = map(data, interpp_CTD))
+
 CTD_interp_monthly$year <- NULL
 save(CTD_interp_monthly, file = "data/CTD_interp_monthly.Rdata")
 # Annual values

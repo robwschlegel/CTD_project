@@ -2,7 +2,7 @@
 ###"pipeline/load_CTD.R"
 ## This script does:
 # 1. Load CTD data and save
-# 2. 
+# 2. Interpolate CTD data and save
 # 3.
 ## DEPENDS ON:
 library(tidyverse)
