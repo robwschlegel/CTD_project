@@ -5,8 +5,8 @@ account: robert-schlegel
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 360992
-bundleId: 1429807
+bundleId: 1429848
 url: https://robert-schlegel.shinyapps.io/CTD_project/
-when: 1528992149.27053
+when: 1528993189.79575
 asMultiple: FALSE
 asStatic: FALSE

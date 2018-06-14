@@ -62,7 +62,8 @@ ui <- fluidPage(
                             p("2018-06-14: The project goes live."))),
         tabPanel("Map", plotOutput("map1")))
     )
-  )
+  ),
+  downloadButton("save_data", "Download")
 )
 
 
@@ -104,6 +105,18 @@ server <- function(input, output) {
       geom_point(aes(colour = z)) +
       coord_cartesian(xlim = c(13, 34), ylim = c(-28, -38))
   })  
+  
+
+# The saving --------------------------------------------------------------
+
+  output$save_data <- downloadHandler(
+    filename = "CTD.csv",
+    content = function(file) {
+      CTD <- CTD()
+      CTD$z <- NULL
+      write.csv(CTD, file, row.names = F)
+    }
+  )
   
 }
 
