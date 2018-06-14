@@ -1,0 +1,3 @@
+This folder contains the scripts that are used in the loading of the data etc.
+
+For ease of use,all of this disperate scripts are run in the correct orer from the 'pipeline.R' script. In order to re-run the entire pipeline one must only open this one file and run it. The code will take care of the rest.

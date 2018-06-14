@@ -1,0 +1,1 @@
+Note that the raw data for the DAFF pelagic and DEA SADCO data products are not pushed up onto the GitHub repo as they are too large. In order to run 'pipeline/load_CTD.R' one must have the pre-requisite raw files saved locally on one's machine.
