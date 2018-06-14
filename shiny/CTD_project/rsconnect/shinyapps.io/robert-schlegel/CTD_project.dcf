@@ -1,0 +1,12 @@
+name: CTD_project
+title: CTD_project
+username:
+account: robert-schlegel
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 360992
+bundleId: 1429807
+url: https://robert-schlegel.shinyapps.io/CTD_project/
+when: 1528992149.27053
+asMultiple: FALSE
+asStatic: FALSE
