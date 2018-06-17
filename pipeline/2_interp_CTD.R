@@ -160,8 +160,8 @@ system.time(CTD_interp_annual <- ALL_CTD %>%
 save(CTD_interp_annual, file = "data/CTD_interp_annual.Rdata")
 
 # For testing with the app
-CTD_interp_tester <- CTD_interp_annual %>% 
-  filter(year %in% c(1997, 1998)) %>% 
+CTD_interp_tester <- CTD_interp_monthly %>% 
+  # filter(year %in% c(1997, 1998)) %>% 
   mutate(temp = round(temp, 2),
          salinity = round(salinity,2),
          oxygen = round(oxygen, 2))
