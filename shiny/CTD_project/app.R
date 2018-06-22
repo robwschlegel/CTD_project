@@ -1,5 +1,4 @@
 
-
 # Prep --------------------------------------------------------------------
 
 library(shiny)
@@ -10,11 +9,11 @@ library(dplyr)
 load("CTD_interp_tester.Rdata")
 CTD_interp_tester <- CTD_interp_tester %>% 
   arrange(depth)
-CTD_interp_tester <- as.data.frame(CTD_interp_tester)
+CTD_interp_tester <- as.data.frame(CTD_interp_tester) 
 # metadata <- CTD_interp_monthly
 # type <- unique(CTD_interp_monthly$type)
-type <- c("CTD", "Bongo", "Calvet")
-dates <- unique(CTD_interp_tester$month)
+# type <- c("CTD", "Bongo", "Calvet")
+dates <- levels(CTD_interp_tester$month)
 depths <- unique(CTD_interp_tester$depth)
 variables <- colnames(CTD_interp_tester)[5:7]
 
@@ -41,7 +40,7 @@ ui <- fluidPage(
                   label = "Choose one depth",
                   choices = depths, multiple = F),
       selectInput(inputId = "Variable",
-                  label = "Choose one variables",
+                  label = "Choose one variable",
                   choices = variables, multiple = F)),
     
     
@@ -71,6 +70,14 @@ ui <- fluidPage(
                               first choose which month you would like. Currently one may also choose
                               which depth layer (rounded to the nearest 10 metres) and abiotic variable
                               one would like to display."),
+                            p("Please note that the data binned into each month category are the mean values
+                              for all of the data detected per pixel for all of the years of data collected
+                              at that pixel. This effectively makes the data shown here monthly climatologies
+                              of the coastal oceans around South Africa. Be cautious with the interpretation
+                              of these data as the sample sizes per pixel and month differ wildly and are not
+                              controlled for here as this is meant to serve as a proof of concept. A more
+                              developed version of this product will include the sample size for the mean
+                              value per pixel as part of the meta-data."),
                             p("Much more is being planned and the current offerings made available for 
                               sub-setting will be widely expanded upon. Both in the number of ways in
                               which one may sub-set and the kinds of sub-setting that will be possible.")),
@@ -88,7 +95,8 @@ ui <- fluidPage(
                             p(),
                             p("2018-06-14: The project goes live."),
                             p("2018-06-14: Added land mask, changed colour palettes for 
-                              different variables, and added some explanatory text."))),
+                              different variables, and added some explanatory text."),
+                            p("2018-06-22: Fixes to linearly interpolated monthly climatologies."))),
         tabPanel("Map", plotOutput("map1")))
     )
   ),
@@ -143,9 +151,12 @@ server <- function(input, output) {
     # The map
     ggplot(CTD, aes(x = lon, y = lat)) +
       borders(fill = "grey80", colour = "black") +
-      # geom_raster(aes(fill = temp))
-      geom_point(aes(colour = z), shape = 15) +
-      scale_colour_viridis_c(input$Variable, option = viri_col) +
+      ## Raster
+      geom_raster(aes(fill = z)) +
+      scale_fill_viridis_c(input$Variable, option = viri_col) +
+      ## Points
+      # geom_point(aes(colour = z), shape = 15) +
+      # scale_colour_viridis_c(input$Variable, option = viri_col) +
       coord_cartesian(xlim = c(13, 34), ylim = c(-26, -38))
   })  
   

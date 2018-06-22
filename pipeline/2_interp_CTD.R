@@ -48,6 +48,12 @@ ALL_CTD <- ALL_CTD %>%
          lon = round(lon, 1),
          lat = round(lat, 1))
 
+# Filter out anomolous oxygen and salinity values
+  # Temperatures were already screened in "1_load_CTD.R"
+ALL_CTD <- ALL_CTD %>% 
+  filter(salinity <= 40, salinity >= 30,
+         oxygen <= 11, oxygen >= 0)
+
 # Create reduced gridded mean values
   ## NB: This presently removes the cruise, station, and type categories
   ## This will be added back in as the app takes shape
@@ -62,7 +68,7 @@ ALL_CTD <- ALL_CTD %>%
          year = lubridate::year(date)) %>% 
   mutate(month = factor(month, levels = c("Jan", "Feb", "Mar", "Apr",
                                           "May", "Jun", "Jul", "Aug",
-                                          "Sep", "Oct", "Nov", "Dec"))) %>% 
+                                          "Sep", "Oct", "Nov", "Dec"))) %>%
   arrange(date)
 
 # Clean up NA values
@@ -102,9 +108,10 @@ bathy_mask_filter <- bathy_mask %>%
   group_by(lon, lat) %>% 
   summarise(depth = mean(depth, na.rm = T)) %>% 
   mutate(depth = abs(round(depth, -1)))
+rm(bathy_mask)
 
 # Load the processed bathymetry mask for soap-film smoothing
-load("data/bathy_masks.Rdata")
+# load("data/bathy_masks.Rdata")
 # ggplot(data = bathy_masks, aes(x = lon, y = lat)) +
 #   geom_point(aes(colour = depth)) +
 #   facet_wrap(~depth_index)
@@ -139,9 +146,9 @@ interpp_col <- function(df, column){
 
 ## Function for creating interpolated slices
 # df <- filter(CTD_pre_interp, month == "Nov", depth == 650) %>%
-#   mutate(depth2 = depth) %>% 
-#   select(-date) %>% 
-#   mutate(depth2 = depth) %>% 
+#   mutate(depth2 = depth) %>%
+#   select(-date) %>%
+#   mutate(depth2 = depth) %>%
 #   select(-depth, -month)
 interpp_CTD <- function(df){
   res_temp <- interpp_col(df, "temp") %>% 
@@ -155,9 +162,10 @@ interpp_CTD <- function(df){
     left_join(res_ox, by = c("lon", "lat"))
   return(res)
 }
+# rm(df, res, res_ox, res_sal, res_temp, test)
 # test <- interpp_CTD(df)
-test <- CTD_interp_monthly[1,]
-test <- map(test$data, interpp_CTD)
+# test <- unnest(CTD_interp_monthly[1,3])
+# test <- purrr::map(test, interpp_CTD)
 
 ## Run it
 # Monthly values
@@ -166,7 +174,7 @@ system.time(CTD_interp_monthly <- CTD_pre_interp %>%
               mutate(depth2 = depth) %>% 
               group_by(depth, month) %>% 
               nest() %>%
-              mutate(res = map(data, interpp_CTD)) %>% 
+              mutate(res = purrr::map(data, interpp_CTD)) %>% 
               select(-data) %>% 
               unnest()) ## 48 seconds
 save(CTD_interp_monthly, file = "data/CTD_interp_monthly.Rdata")
@@ -177,11 +185,10 @@ system.time(CTD_interp_annual <- CTD_pre_interp %>%
               mutate(depth2 = depth) %>%
               group_by(depth, year) %>% 
               nest() %>%
-              mutate(res = map(data, interpp_CTD)) %>% 
+              mutate(res = purrr::map(data, interpp_CTD)) %>% 
               select(-data) %>% 
-              unnest()) ## 82 seconds
+              unnest()) ## 91 seconds
 save(CTD_interp_annual, file = "data/CTD_interp_annual.Rdata")
-
 
 # Monthly and annual values
   # NB: There are a some months of data that have just quite not enough data to interpolate correctly
@@ -199,7 +206,7 @@ save(CTD_interp_annual, file = "data/CTD_interp_annual.Rdata")
 #               mutate(depth2 = depth) %>%
 #               group_by(depth, year, month) %>%
 #               nest() %>%
-#               mutate(res = map(data, interpp_CTD)) %>%
+#               mutate(res = purrr::map(data, interpp_CTD)) %>%
 #               select(-data) %>%
 #               unnest()) ## 346 seconds
 # save(CTD_interp_monthly_annual, file = "data/CTD_interp_monthly_annual.Rdata")
@@ -221,114 +228,121 @@ save(CTD_interp_tester, file = "data/CTD_interp_tester.Rdata")
 
 # 4. Soap-film smoothing --------------------------------------------------
 
-## NB: Thissection still requires a good deal of work
+## NB: This section still requires a good deal of work
+# 
+# # Create bathy mask and temperature data frames
+# foutline <- sa0
+# fdepth <- filter(ALL_CTD, month == "Jan", depth == 0)
+# foutline_sub <- foutline[foutline$lat < (max(fdepth$lat)+0.5) & foutline$lon < (max(fdepth$lon)+0.5),]
+# foutline_sub <- rbind(foutline_sub, foutline_sub[1,])
+# # Visualise
+# ggplot(foutline, aes(x = lon, y = lat)) +
+#   geom_path() +
+#   geom_path(data = foutline_sub, colour = "red", size = 0.5) +
+#   geom_point(data = fdepth, aes(x = lon, y = lat, colour = temp)) +
+#   coord_fixed() + ylab("Northing") + xlab("Easting") +
+#   scale_color_viridis()
+# 
+# ## Run an additive model
+# library(mgcv)
+# crds <- foutline_sub[,2:3] # These coords were meant to be pulled from a shape file...
+# tprs <- gam(temp ~ s(lon, lat, k = 60), data = fdepth, method = "REML")
+# summary(tprs)
+# # Adjsut values so it can be plotted
+# grid.x <- with(tprs$var.summary,
+#                seq(min(c(lon, crds[,1])), max(c(lon, crds[,1])), by = 0.1))
+# grid.y <- with(tprs$var.summary,
+#                seq(min(c(lat, crds[,2])), max(c(lat, crds[,2])), by = 0.1))
+# pdata <- with(tprs$var.summary, expand.grid(lon = grid.x, lat = grid.y))
+# names(pdata) <- c("lon","lat")
+# ##predictions
+# pdata <- transform(pdata, temp = predict(tprs, pdata, type = "response"))
+# tmp <- pdata                         # temporary version...
+# # take <- with(tmp, Depth > 0)        # getting rid of > 0 depth points
+# # tmp$Depth[take] <- NA
+# # Visualise the results
+# ggplot(foutline, aes(x = lon, y = lat)) + # lol. This looks terrible...
+#   geom_raster(data = tmp, aes(x = lon, y = lat, fill = temp)) +
+#   geom_path() +
+#   geom_point(data = fdepth, aes(x = lon, y = lat), size = 0.5) +
+#   coord_fixed() + ylab("Northing") + xlab("Easting") +
+#   scale_fill_viridis(na.value = NA)
+# 
+# # Now we get to the soap-filter
+# bound <- list(list(lon = crds$lon, lat = crds$lat))
+# # N <- 10 # not using
+# gx <- seq(min(crds[,1]), max(crds[,1]), len = 300)
+# gy <- seq(min(crds[,2]), max(crds[,2]), len = 400)
+# gp <- expand.grid(gx, gy)
+# names(gp) <- c("lon","lat")
+# knots <- gp[with(gp, inSide(bound, lon, lat)), ]
+# names(knots) <- c("lon", "lat")
+# 
+# # Making a plan
+# knots$lon <- round(knots$lon,1)
+# knots$lat <- round(knots$lat,1)
+# knots <- unique(knots)
+# ki <- knnx.index(as.matrix(knots), as.matrix(crds), k = 1)
+# knots <- knots[-ki,]
+# 
+# # Freestyle
+# # fs.test(foutline[,2:3], fdepth[,2:3])
+# bound <- list(list(lon = foutline$lon, lat = foutline$lat))
+# knots <- fdepth[with(fdepth, inSide(bound, lon, lat)),]
+# knots <- fdepth[with(fdepth, inSide(foutline[,2:3], lon, lat)),]
+# knots <- knots[with(knots, inSide(bound, lon, lat)),]
+# 
+# knots <- fdepth[with(fdepth, inSide(bound, lon, lat)), ]
+# inlake <- with(pdata, inSide(bound, lon, lat))
+# pdata <- pdata[inlake, ]
+# 
+# ggplot(foutline, aes(x = lon, y = lat)) +
+#   geom_raster(data = pdata, aes(x = lon, y = lat, fill = temp)) +
+#   geom_path() +
+#   # geom_point(data = knots, aes(x = lon, y = lat), size = 0.5) +
+#   geom_point(data = fdepth, aes(x = lon, y = lat), size = 0.1) +
+#   coord_fixed() + ylab("Northing") + xlab("Easting") +
+#   scale_fill_viridis(na.value = NA)
+# 
+# 
+# 
+# cheeky <- data.frame(lon = 20, lat = -35)
+# 
+# # The gam for interpolating
+# m2 <- gam(temp ~ s(lon, lat, bs = "so", xt = list(bnd = bound)),
+#           data = knots, method = "REML", knots = cheeky)
+# 
+# 
+# ## Comparison
+# inlake <- with(pdata, inSide(bound, lon, lat))
+# pdata <- pdata[inlake, ]
+# 
+# pdata2 <- transform(rbind(pdata, pdata2),
+#                     Model = rep(c("TPRS", "Soap-film"),
+#                                 times = c(nrow(pdata), nrow(pdata2))))
+# 
+# ## let's drop the NAs from the Soap-film too...
+# take <- with(pdata2, !is.na(Depth))
+# pdata2 <- pdata2[take, ]
+# 
+# poutline <- transform(rbind(foutline, foutline),
+#                       Model = rep(c("TPRS", "Soap-film"), each = nrow(foutline)))
+# names(poutline)[1:2] <- c("os_x", "os_y")
+# 
+# ggplot(poutline, aes(x = os_x, y = os_y)) +
+#   geom_raster(data = pdata2, aes(x = os_x, y = os_y, fill = Depth)) +
+#   geom_path() +
+#   geom_point(data = fdepth, aes(x = os_x, y = os_y), size = 0.5) +
+#   coord_fixed() +
+#   ylab("Northing") + xlab("Easting") +
+#   scale_fill_viridis(na.value = NA) +
+#   facet_wrap( ~ Model) +
+#   theme(legend.position = "top", legend.key.width = unit(2.5, "cm"))
+# 
 
-# Create bathy mask and temperature data frames
-foutline <- sa0
-fdepth <- filter(ALL_CTD, month == "Jan", depth == 0)
-foutline_sub <- foutline[foutline$lat < (max(fdepth$lat)+0.5) & foutline$lon < (max(fdepth$lon)+0.5),]
-foutline_sub <- rbind(foutline_sub, foutline_sub[1,])
-# Visualise
-ggplot(foutline, aes(x = lon, y = lat)) +
-  geom_path() +
-  geom_path(data = foutline_sub, colour = "red", size = 0.5) +
-  geom_point(data = fdepth, aes(x = lon, y = lat, colour = temp)) +
-  coord_fixed() + ylab("Northing") + xlab("Easting") +
-  scale_color_viridis()
 
-## Run an additive model
-library(mgcv)
-crds <- foutline_sub[,2:3] # These coords were meant to be pulled from a shape file...
-tprs <- gam(temp ~ s(lon, lat, k = 60), data = fdepth, method = "REML")
-summary(tprs)
-# Adjsut values so it can be plotted
-grid.x <- with(tprs$var.summary,
-               seq(min(c(lon, crds[,1])), max(c(lon, crds[,1])), by = 0.1))
-grid.y <- with(tprs$var.summary,
-               seq(min(c(lat, crds[,2])), max(c(lat, crds[,2])), by = 0.1))
-pdata <- with(tprs$var.summary, expand.grid(lon = grid.x, lat = grid.y))
-names(pdata) <- c("lon","lat")
-##predictions
-pdata <- transform(pdata, temp = predict(tprs, pdata, type = "response"))
-tmp <- pdata                         # temporary version...
-# take <- with(tmp, Depth > 0)        # getting rid of > 0 depth points
-# tmp$Depth[take] <- NA
-# Visualise the results
-ggplot(foutline, aes(x = lon, y = lat)) + # lol. This looks terrible...
-  geom_raster(data = tmp, aes(x = lon, y = lat, fill = temp)) +
-  geom_path() +
-  geom_point(data = fdepth, aes(x = lon, y = lat), size = 0.5) +
-  coord_fixed() + ylab("Northing") + xlab("Easting") +
-  scale_fill_viridis(na.value = NA)
+# 5. Clean up -------------------------------------------------------------
+rm(bathy_mask_filter, CTD_interp_annual, CTD_interp_monthly, 
+   CTD_interp_tester, CTD_pre_interp, interpp_col, interpp_CTD)
 
-# Now we get to the soap-filter
-bound <- list(list(lon = crds$lon, lat = crds$lat))
-# N <- 10 # not using
-gx <- seq(min(crds[,1]), max(crds[,1]), len = 300)
-gy <- seq(min(crds[,2]), max(crds[,2]), len = 400)
-gp <- expand.grid(gx, gy)
-names(gp) <- c("lon","lat")
-knots <- gp[with(gp, inSide(bound, lon, lat)), ]
-names(knots) <- c("lon", "lat")
-
-# Making a plan
-knots$lon <- round(knots$lon,1)
-knots$lat <- round(knots$lat,1)
-knots <- unique(knots)
-ki <- knnx.index(as.matrix(knots), as.matrix(crds), k = 1)
-knots <- knots[-ki,]
-
-# Freestyle
-# fs.test(foutline[,2:3], fdepth[,2:3])
-bound <- list(list(lon = foutline$lon, lat = foutline$lat))
-knots <- fdepth[with(fdepth, inSide(bound, lon, lat)),]
-knots <- fdepth[with(fdepth, inSide(foutline[,2:3], lon, lat)),]
-knots <- knots[with(knots, inSide(bound, lon, lat)),]
-
-knots <- fdepth[with(fdepth, inSide(bound, lon, lat)), ]
-inlake <- with(pdata, inSide(bound, lon, lat))
-pdata <- pdata[inlake, ]
-
-ggplot(foutline, aes(x = lon, y = lat)) +
-  geom_raster(data = pdata, aes(x = lon, y = lat, fill = temp)) +
-  geom_path() +
-  # geom_point(data = knots, aes(x = lon, y = lat), size = 0.5) +
-  geom_point(data = fdepth, aes(x = lon, y = lat), size = 0.1) +
-  coord_fixed() + ylab("Northing") + xlab("Easting") +
-  scale_fill_viridis(na.value = NA)
-
-
-
-cheeky <- data.frame(lon = 20, lat = -35)
-
-# The gam for interpolating
-m2 <- gam(temp ~ s(lon, lat, bs = "so", xt = list(bnd = bound)),
-          data = knots, method = "REML", knots = cheeky)
-
-
-## Comparison
-inlake <- with(pdata, inSide(bound, lon, lat))
-pdata <- pdata[inlake, ]
-
-pdata2 <- transform(rbind(pdata, pdata2),
-                    Model = rep(c("TPRS", "Soap-film"),
-                                times = c(nrow(pdata), nrow(pdata2))))
-
-## let's drop the NAs from the Soap-film too...
-take <- with(pdata2, !is.na(Depth))
-pdata2 <- pdata2[take, ]
-
-poutline <- transform(rbind(foutline, foutline),
-                      Model = rep(c("TPRS", "Soap-film"), each = nrow(foutline)))
-names(poutline)[1:2] <- c("os_x", "os_y")
-
-ggplot(poutline, aes(x = os_x, y = os_y)) +
-  geom_raster(data = pdata2, aes(x = os_x, y = os_y, fill = Depth)) +
-  geom_path() +
-  geom_point(data = fdepth, aes(x = os_x, y = os_y), size = 0.5) +
-  coord_fixed() +
-  ylab("Northing") + xlab("Easting") +
-  scale_fill_viridis(na.value = NA) +
-  facet_wrap( ~ Model) +
-  theme(legend.position = "top", legend.key.width = unit(2.5, "cm"))
 

@@ -20,6 +20,4 @@ system.time(source("pipeline/load_CTD.R")) # 35 seconds
 
 # 2. Interpolate CTD data and save ----------------------------------------
 
-## NB: This is currently not advisable to run in one go
-  ## The interpolation is dreadfully slow
-# source("pipeline/2_interp_CTD.R")
+system.time(source("pipeline/2_interp_CTD.R")) # xxx seconds

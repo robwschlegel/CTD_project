@@ -43,7 +43,7 @@ suppressWarnings(system.time(DAFF_pelagic <- map_dfr(files_DAFF_pelagic, load_DA
   # It was decided to leave the raw data as is and make the corrections here
 ## Temp
 DAFF_pelagic$temp[DAFF_pelagic$temp > 30] <- NA
-DAFF_pelagic$temp[DAFF_pelagic$temp < 2.91] <- NA
+DAFF_pelagic$temp[DAFF_pelagic$temp < 2] <- NA
 # range(DAFF_pelagic$temp, na.rm = T) # check...
 ## Lat
 DAFF_pelagic$lat[DAFF_pelagic$lat > -5] <- NA
