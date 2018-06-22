@@ -9,7 +9,6 @@
 library(tidyverse)
 library(lubridate)
 library(data.table)
-# library(viridis)
 library(akima)
 # library(raster)
 # library(mgcv)
@@ -45,9 +44,9 @@ ALL_CTD <- ALL_CTD[complete.cases(ALL_CTD$lat),]
 
 # Round down depth, lon, and lat values
 ALL_CTD <- ALL_CTD %>% 
-  mutate(depth = plyr::round_any(depth, 10),
-         lon = plyr::round_any(lon, 0.1),
-         lat = plyr::round_any(lat, 0.1))
+  mutate(depth = round(depth, -1),
+         lon = round(lon, 1),
+         lat = round(lat, 1))
 
 # Create reduced gridded mean values
   ## NB: This presently removes the cruise, station, and type categories
@@ -60,13 +59,26 @@ ALL_CTD <- data.table(ALL_CTD)[,.(temp = mean(temp, na.rm = T),
 # Add month and year columns
 ALL_CTD <- ALL_CTD %>% 
   mutate(month = lubridate::month(date, label = TRUE),
-         year = lubridate::year(date))
+         year = lubridate::year(date)) %>% 
+  mutate(month = factor(month, levels = c("Jan", "Feb", "Mar", "Apr",
+                                          "May", "Jun", "Jul", "Aug",
+                                          "Sep", "Oct", "Nov", "Dec"))) %>% 
+  arrange(date)
 
-# Clean up NAvalues
+# Clean up NA values
 ALL_CTD$temp[ALL_CTD$temp == "NaN"] <- NA  
 ALL_CTD$salinity[ALL_CTD$salinity == "NaN"] <- NA  
 ALL_CTD$oxygen[ALL_CTD$oxygen == "NaN"] <- NA  
 
+# Reduce precision of measurements to reduce file size
+CTD_pre_interp <- ALL_CTD %>% 
+  mutate(temp = round(temp, 2),
+         salinity = round(salinity, 2),
+         oxygen = round(oxygen, 2))
+
+# Save for further use
+save(CTD_pre_interp, file = "data/CTD_pre_interp.Rdata")
+rm(ALL_CTD)
 
 # 2. Prepare interpolation grid -------------------------------------------
 
@@ -78,41 +90,59 @@ ALL_CTD$oxygen[ALL_CTD$oxygen == "NaN"] <- NA
 # coordinates(grd) <- ~x + y
 # gridded(grd) <- TRUE
 
-# Load bathymetry masks
+# Load the normal bathymetry mask for linear interpolation
 load("data/bathy_mask.Rdata")
+# ggplot(data = bathy_mask, aes(x = lon, y = lat)) +
+  # geom_point(aes(colour = depth))
+
+bathy_mask_filter <- bathy_mask %>% 
+  filter(depth <= 0, depth >= -1000) %>% 
+  mutate(lon = round(lon, 1),
+         lat = round(lat, 1)) %>% 
+  group_by(lon, lat) %>% 
+  summarise(depth = mean(depth, na.rm = T)) %>% 
+  mutate(depth = abs(round(depth, -1)))
+
+# Load the processed bathymetry mask for soap-film smoothing
 load("data/bathy_masks.Rdata")
+# ggplot(data = bathy_masks, aes(x = lon, y = lat)) +
+#   geom_point(aes(colour = depth)) +
+#   facet_wrap(~depth_index)
 
 
 # 3. Linear interpolation -------------------------------------------------
 
 ## Function for interpolating a column in the CTD data.frame
-# df <- filter(ALL_CTD, month == "Jan", depth == 10)
+# df <- filter(CTD_pre_interp, month == "Jan", depth == 10) %>% 
+  # mutate(depth2 = depth)
 # column <- "temp"
 interpp_col <- function(df, column){
   df1 <- as.data.frame(df)
-  # z <- colnames(df1) == column
-  # colnames(z) <- column
-  # df1$z <- as.vector(df1[z])
   df1$z <- as.vector(df1[,colnames(df1) == column])
   df1 <- df1[complete.cases(df1$z),]
-  # column1 <- column[complete.cases(column)]
+  bathy <- bathy_mask_filter %>% 
+    filter(depth >= df$depth2[1])
   if(nrow(df1) < 5){
     res <- data.frame(lon = df$lat[1], lat = df$lon[1], z = NA)
     colnames(res)[3] <- column
   } else {
-    res <- data.frame(interpp(x = df1$lon, y = df1$lat, z = df1$z,
-                              xo = bathy_masks$lon, yo = bathy_masks$lat, linear = TRUE, 
-                              extrap = FALSE, dupl = "mean"))
-  colnames(res) <- c("lon", "lat", column)
-  res <- res %>% 
+    suppressWarnings(res <- data.frame(interpp(x = df1$lon, y = df1$lat, z = df1$z,
+                              xo = bathy$lon, yo = bathy$lat, linear = TRUE, 
+                              extrap = FALSE, dupl = "mean")))
+  res <- res %>%
+    mutate(z = round(z, 2)) %>% 
     unique()
+  colnames(res) <- c("lon", "lat", column)
   }
   return(res)
 }
 
 ## Function for creating interpolated slices
-# df <- filter(ALL_CTD, month == "Nov", depth == 650)
-# column <- "oxygen"
+# df <- filter(CTD_pre_interp, month == "Nov", depth == 650) %>%
+#   mutate(depth2 = depth) %>% 
+#   select(-date) %>% 
+#   mutate(depth2 = depth) %>% 
+#   select(-depth, -month)
 interpp_CTD <- function(df){
   res_temp <- interpp_col(df, "temp") %>% 
     na.omit()
@@ -126,7 +156,35 @@ interpp_CTD <- function(df){
   return(res)
 }
 # test <- interpp_CTD(df)
+test <- CTD_interp_monthly[1,]
+test <- map(test$data, interpp_CTD)
 
+## Run it
+# Monthly values
+system.time(CTD_interp_monthly <- CTD_pre_interp %>%
+              select(-date) %>% 
+              mutate(depth2 = depth) %>% 
+              group_by(depth, month) %>% 
+              nest() %>%
+              mutate(res = map(data, interpp_CTD)) %>% 
+              select(-data) %>% 
+              unnest()) ## 48 seconds
+save(CTD_interp_monthly, file = "data/CTD_interp_monthly.Rdata")
+
+# Annual values
+system.time(CTD_interp_annual <- CTD_pre_interp %>%
+              select(-date) %>% 
+              mutate(depth2 = depth) %>%
+              group_by(depth, year) %>% 
+              nest() %>%
+              mutate(res = map(data, interpp_CTD)) %>% 
+              select(-data) %>% 
+              unnest()) ## 82 seconds
+save(CTD_interp_annual, file = "data/CTD_interp_annual.Rdata")
+
+
+# Monthly and annual values
+  # NB: There are a some months of data that have just quite not enough data to interpolate correctly
 # Isolate interpolation issues to feed solutions back into the above function
 # test <- data.frame()
 # for(i in 1:5){#length(levels(as.factor(ALL_CTD$depth)))){
@@ -136,47 +194,20 @@ interpp_CTD <- function(df){
 #     test <- rbind(test, df2)
 #   }
 # }
-
-## Run it
-# Monthly values
-# This is annoyingly slow...
-system.time(CTD_interp_monthly <- ALL_CTD %>%
-              select(-date) %>% 
-              group_by(depth, month) %>% 
-              nest() %>%
-              mutate(res = map(data, interpp_CTD)) %>% 
-              select(-data) %>% 
-              unnest()) ## 346 seconds
-save(CTD_interp_monthly, file = "data/CTD_interp_monthly.Rdata")
-
-# Annual values
-system.time(CTD_interp_annual <- ALL_CTD %>%
-              select(-date) %>% 
-              group_by(depth, year) %>% 
-              nest() %>%
-              mutate(res = map(data, interpp_CTD)) %>% 
-              select(-data) %>% 
-              unnest()) ## 515 seconds
-save(CTD_interp_annual, file = "data/CTD_interp_annual.Rdata")
-
-# For testing with the app
-CTD_interp_tester <- CTD_interp_monthly %>% 
-  # filter(year %in% c(1997, 1998)) %>% 
-  mutate(temp = round(temp, 2),
-         salinity = round(salinity,2),
-         oxygen = round(oxygen, 2))
-save(CTD_interp_tester, file = "data/CTD_interp_tester.Rdata")
-
-# Monthly and annual values
-# Not run yet as I don't have the stomach to wait for it
-# system.time(CTD_interp_monthly <- ALL_CTD %>%
-#               select(-date) %>% 
-#               group_by(depth, month) %>% 
+# system.time(CTD_interp_monthly_annual <- CTD_pre_interp %>%
+#               select(-date) %>%
+#               mutate(depth2 = depth) %>%
+#               group_by(depth, year, month) %>%
 #               nest() %>%
-#               mutate(res = map(data, interpp_CTD)) %>% 
-#               select(-data) %>% 
+#               mutate(res = map(data, interpp_CTD)) %>%
+#               select(-data) %>%
 #               unnest()) ## 346 seconds
 # save(CTD_interp_monthly_annual, file = "data/CTD_interp_monthly_annual.Rdata")
+
+# For testing with the app
+CTD_interp_tester <- CTD_interp_monthly #%>% 
+  # filter(year %in% c(1997, 1998)) %>% 
+save(CTD_interp_tester, file = "data/CTD_interp_tester.Rdata")
 
 # Look at one slice
 # slice <- filter(CTD_interp_monthly, month == "Nov", depth == "50")

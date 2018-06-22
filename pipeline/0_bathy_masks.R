@@ -3,11 +3,8 @@
 ## This script does:
 # 1. Create bathy masks and save
 ## DEPENDS ON:
-# library(plyr)
-library(dplyr)
+library(tidyverse)
 library(data.table)
-library(ggplot2)
-# library(viridis)
 # library(doMC); doMC::registerDoMC(4)
 # source("func/shoreNormalTransectFunc.R")
 ## USED BY:
