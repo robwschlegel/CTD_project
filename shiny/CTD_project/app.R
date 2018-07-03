@@ -157,7 +157,8 @@ server <- function(input, output) {
       ## Points
       # geom_point(aes(colour = z), shape = 15) +
       # scale_colour_viridis_c(input$Variable, option = viri_col) +
-      coord_cartesian(xlim = c(13, 34), ylim = c(-26, -38))
+      coord_cartesian(xlim = c(13, 34), ylim = c(-26, -38)) +
+      labs(y = "", x = "")
   })  
   
 

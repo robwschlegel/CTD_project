@@ -35,12 +35,21 @@ rm(DAFF_pelagic, DEA_SADCO)
 
 # Currently removing data deeper than 1000m for speed purposes
 ALL_CTD <- data.table(ALL_CTD[ALL_CTD$depth >= 0 & ALL_CTD$depth <= 1000,])
+# Leaving depths greter than 1000 metres in for now
+# ALL_CTD <- data.table(ALL_CTD[ALL_CTD$depth >= 0,])
 
 # Remove all rows with missing dates, depths, lons, and lats
 ALL_CTD <- ALL_CTD[complete.cases(ALL_CTD$date),]
 ALL_CTD <- ALL_CTD[complete.cases(ALL_CTD$depth),]
 ALL_CTD <- ALL_CTD[complete.cases(ALL_CTD$lon),]
 ALL_CTD <- ALL_CTD[complete.cases(ALL_CTD$lat),]
+
+# Replace bottom depth less than 20 with NA and remove those lines
+# Currently rather using the GEBCO bathymetry mask for proper bottom depths
+# ALL_CTD$bot_depth[ALL_CTD$bot_depth <= 20] <- NA
+# ALL_CTD$bot_depth[ALL_CTD$bot_depth == 9999] <- NA  
+# ALL_CTD$bot_depth[ALL_CTD$bot_depth == 9999.99] <- NA
+# ALL_CTD <- ALL_CTD[complete.cases(ALL_CTD$bot_depth),]
 
 # Round down depth, lon, and lat values
 ALL_CTD <- ALL_CTD %>% 
@@ -50,9 +59,22 @@ ALL_CTD <- ALL_CTD %>%
 
 # Filter out anomolous oxygen and salinity values
   # Temperatures were already screened in "1_load_CTD.R"
-ALL_CTD <- ALL_CTD %>% 
-  filter(salinity <= 40, salinity >= 30,
-         oxygen <= 11, oxygen >= 0)
+ALL_CTD$salinity[ALL_CTD$salinity > 40 | ALL_CTD$salinity < 30] <- NA
+ALL_CTD$oxygen[ALL_CTD$oxygen > 11 | ALL_CTD$oxygen < 0] <- NA
+# ALL_CTD <- ALL_CTD %>% 
+#   filter(salinity <= 40, salinity >= 30,
+#          oxygen <= 11, oxygen >= 0)
+
+# Determine the average bottom depth per pixel and round to the nearest 10 metres
+# Presenty using GEBCO bathymetry for bottom depths
+# ALL_CTD <- ALL_CTD %>% 
+#   group_by(lon, lat) %>% 
+#   mutate(bot_depth = mean(bot_depth, na.rm = T),
+#          bot_depth = round(bot_depth, -1)) %>% 
+#   mutate(bot_depth = if_else(max(depth) > bot_depth, max(depth), bot_depth))
+# Check that no depths are deeper than the bttom depths
+# There are several that were off by 10 metres due to rounding and so are corrected
+# filter(ALL_CTD, depth > bot_depth)
 
 # Create reduced gridded mean values
   ## NB: This presently removes the cruise, station, and type categories
@@ -102,7 +124,8 @@ load("data/bathy_mask.Rdata")
   # geom_point(aes(colour = depth))
 
 bathy_mask_filter <- bathy_mask %>% 
-  filter(depth <= 0, depth >= -1000) %>% 
+  # filter(depth <= 0, depth >= -1000) %>% 
+  filter(depth <= 0, abs(depth) <= max(CTD_pre_interp$depth)) %>% 
   mutate(lon = round(lon, 1),
          lat = round(lat, 1)) %>% 
   group_by(lon, lat) %>% 
@@ -120,7 +143,7 @@ rm(bathy_mask)
 # 3. Linear interpolation -------------------------------------------------
 
 ## Function for interpolating a column in the CTD data.frame
-# df <- filter(CTD_pre_interp, month == "Jan", depth == 10) %>% 
+# df <- filter(CTD_pre_interp, month == "Jan", depth == 10) %>%
   # mutate(depth2 = depth)
 # column <- "temp"
 interpp_col <- function(df, column){
@@ -129,6 +152,7 @@ interpp_col <- function(df, column){
   df1 <- df1[complete.cases(df1$z),]
   bathy <- bathy_mask_filter %>% 
     filter(depth >= df$depth2[1])
+  # bot_depth <- bathy[bathy$lon %in% df$lon & bathy$lat %in% df$lat,]
   if(nrow(df1) < 5){
     res <- data.frame(lon = df$lat[1], lat = df$lon[1], z = NA)
     colnames(res)[3] <- column
@@ -146,10 +170,10 @@ interpp_col <- function(df, column){
 
 ## Function for creating interpolated slices
 # df <- filter(CTD_pre_interp, month == "Nov", depth == 650) %>%
-#   mutate(depth2 = depth) %>%
-#   select(-date) %>%
-#   mutate(depth2 = depth) %>%
-#   select(-depth, -month)
+  # mutate(depth2 = depth) %>%
+  # select(-date) %>%
+  # mutate(depth2 = depth) %>%
+  # select(-depth, -month)
 interpp_CTD <- function(df){
   res_temp <- interpp_col(df, "temp") %>% 
     na.omit()
@@ -177,6 +201,9 @@ system.time(CTD_interp_monthly <- CTD_pre_interp %>%
               mutate(res = purrr::map(data, interpp_CTD)) %>% 
               select(-data) %>% 
               unnest()) ## 48 seconds
+# Add bottom depths
+# CTD_interp_monthly <- CTD_interp_monthly %>% 
+#   left_join()
 save(CTD_interp_monthly, file = "data/CTD_interp_monthly.Rdata")
 
 # Annual values
@@ -187,7 +214,7 @@ system.time(CTD_interp_annual <- CTD_pre_interp %>%
               nest() %>%
               mutate(res = purrr::map(data, interpp_CTD)) %>% 
               select(-data) %>% 
-              unnest()) ## 91 seconds
+              unnest()) ## 81 seconds
 save(CTD_interp_annual, file = "data/CTD_interp_annual.Rdata")
 
 # Monthly and annual values
