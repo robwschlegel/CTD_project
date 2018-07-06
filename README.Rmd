@@ -36,3 +36,6 @@ The metadata, in as much is available, for all of the data products may be found
 
 * June 17th, 2018
     * Updated the app to show different colours as well as the land mask
+    
+* July 6th, 2018
+    * Major updates to pipeline, products, and app
