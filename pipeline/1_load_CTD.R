@@ -74,6 +74,7 @@ load_DEA_SADCO <- function(file_name){
   file_1 <- read_delim(file_name, delim = "\t", skip = 1, col_types = "cccccnnnnnnnn", na = "1e+010",
                      col_names = c("cruise", "station", "type", "date", "time", "lon", "lat",	"bot_depth",
                                    "etopo2_depth", "depth",	"temp",	"salinity",	"oxygen"))
+  # file_1 <- read_delim(file_name, delim = "\t", na = "1e+010")
   file_1$date <- as.Date(as.character(parse_date_time(file_1$date, "mdy", tz = "Africa/Johannesburg")))
   file_1$time <- parse_date_time(paste0(file_1$date," ",file_1$time), "ymdHM", tz = "Africa/Johannesburg")
   file_1 <- file_1 %>% 

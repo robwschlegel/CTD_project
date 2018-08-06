@@ -39,3 +39,6 @@ The metadata, in as much is available, for all of the data products may be found
     
 * July 6th, 2018
     * Major updates to pipeline, products, and app
+
+* August 6th, 2018
+    * Added more DAFF and DEA cruise meta-data
