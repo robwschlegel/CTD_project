@@ -5,10 +5,6 @@ date: "14 June 2018"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
 # CTD project
 
 The purpose of this as yet unnamed project is to create a shiny app that will allow users direct access to 4D CTD data products and other similar things. This repo also houses the pipeline that creates these products and makes them available for the shiny app to then bring them online to the users.
